@@ -14,8 +14,9 @@ from PyQt5.QtGui import QStandardItem, QStandardItemModel
 
 
 class ChildrenMenuWidget(QWidget):
-    sigClickChild = QtCore.pyqtSignal(str)
-    sigHoverChild = QtCore.pyqtSignal(str)
+    # https://stackoverflow.com/questions/10762809/in-pyside-why-does-emiting-an-integer-0x7fffffff-result-in-overflowerror-af
+    sigClickChild = QtCore.pyqtSignal(object)
+    sigHoverChild = QtCore.pyqtSignal(object)
 
     sigMouseLeave = QtCore.pyqtSignal()
 
@@ -23,7 +24,7 @@ class ChildrenMenuWidget(QWidget):
         super().__init__(parent)
 
         self.setObjectName("MenuWidget")
-        self._menu = menu  # 需要保存menu, 用于设置数据时调整menu的大小
+        self._menu = menu  # Retain the menu so we can resize it when the data changes.
         # self.resize(217, 289)
 
         self.verticalLayout = QtWidgets.QVBoxLayout(self)
@@ -80,7 +81,7 @@ class ChildrenMenuWidget(QWidget):
 
         for clsName, objName, widgetId in zip(childClsNameList, childObjNameList, childWidgetIdList):
             item = QStandardItem(f"{clsName}{objName and f'#{objName}'}")
-            item.setData(f"{clsName}{objName and f'#{objName}'} (id {widgetId})", Qt.ToolTipRole)
+            item.setData(f"{clsName}{objName and f'#{objName}'} (id 0x{widgetId:x})", Qt.ToolTipRole)
             item.setData(widgetId, Qt.UserRole + 1)
             self._model.appendRow(item)
 
@@ -94,14 +95,14 @@ class ChildrenMenuWidget(QWidget):
     def onListViewClicked(self, index):
         widgetId = index.data(Qt.UserRole + 1)
         if widgetId is None:
-            widgetId = -1  # loading项的id为-1, 由外部处理点击事件(需要隐藏的)
-        self.sigClickChild.emit(str(widgetId))
+            widgetId = -1  # The loading item uses id -1; the caller handles the click and should hide it.
+        self.sigClickChild.emit(widgetId)
 
     def onListViewEntered(self, index):
         widgetId = index.data(Qt.UserRole + 1)
         if widgetId is None:
-            widgetId = -1  # loading项的id为-1, 由外部处理点击事件(需要隐藏的)
-        self.sigHoverChild.emit(str(widgetId))
+            widgetId = -1  # The loading item uses id -1; the caller handles the hover and should hide it.
+        self.sigHoverChild.emit(widgetId)
 
     def leaveEvent(self, event):
         super().leaveEvent(event)

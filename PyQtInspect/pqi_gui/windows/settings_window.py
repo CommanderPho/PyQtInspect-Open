@@ -76,7 +76,7 @@ class SettingWindow(QtWidgets.QDialog):
         self.setWindowTitle("Settings")
         self.setWindowIcon(get_icon())
         self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowContextHelpButtonHint)
-        self.resize(500, 300)
+        self.setMinimumWidth(500)
 
         self._mainLayout = QtWidgets.QVBoxLayout(self)
         self._mainLayout.setContentsMargins(0, 10, 0, 0)
@@ -109,6 +109,8 @@ class SettingWindow(QtWidgets.QDialog):
         self._buttonLayout.addWidget(self._cancelButton)
 
         self._mainLayout.addLayout(self._buttonLayout)
+
+        self._mainLayout.addSpacing(4)
 
     def saveSettings(self):
         if self._pycharmPathLine.isValueValid():

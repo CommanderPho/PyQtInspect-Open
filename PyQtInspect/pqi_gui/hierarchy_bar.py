@@ -59,7 +59,7 @@ class HierarchyItem(QPushButton):
 
         self.setMouseTracking(True)
         self.setCheckable(True)
-        self.setToolTip(f"{self._text} (id {widgetId})")
+        self.setToolTip(f"{self._text} (id 0x{widgetId:x})")
 
         self.arrowClicked.connect(self._onArrowClicked)
 
@@ -90,7 +90,7 @@ class HierarchyItem(QPushButton):
             painter.setFont(self.m_font)
             painter.drawText(QRect(0, 0, self._textWidth, ITEM_HEIGHT), Qt.AlignCenter, self._text)
 
-        # 绘制箭头
+        # Draw the arrow.
         if self._menuShowed:
             painter.drawPixmap(QRect(self._textWidth, 0, ARROW_WIDTH, ITEM_HEIGHT), self.m_checkedIcon,
                                self.m_checkedIcon.rect())
@@ -123,7 +123,7 @@ class HierarchyItem(QPushButton):
     def enterEvent(self, event):
         self._moveFlag = True
         self.update()
-        self._barWidget.notifyItemHovered(self)  # 向上层通知鼠标进入
+        self._barWidget.notifyItemHovered(self)  # Notify the parent widget that the mouse entered.
 
     def leaveEvent(self, event):
         self._moveFlag = False
@@ -160,7 +160,7 @@ class HierarchyBarScrollArea(QtWidgets.QScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def wheelEvent(self, event):
-        # 响应鼠标滚轮事件, 倒置事件的坐标系, 使得横向滚动条也能滚动
+        # Handle wheel events by swapping the axes so the horizontal scroll bar can move.
         newEvent = QtGui.QWheelEvent(event.pos(), event.globalPos(),
                                      QtCore.QPoint(event.pixelDelta().y(), event.pixelDelta().x()),
                                      QtCore.QPoint(event.angleDelta().y(), event.angleDelta().x()),
@@ -169,12 +169,12 @@ class HierarchyBarScrollArea(QtWidgets.QScrollArea):
 
 
 class HierarchyBar(QtWidgets.QWidget):
-    sigAncestorItemChanged = pyqtSignal(str)  # widgetId
-    sigAncestorItemHovered = pyqtSignal(str)  # widgetId
+    sigAncestorItemChanged = pyqtSignal(object)  # widgetId
+    sigAncestorItemHovered = pyqtSignal(object)  # widgetId
 
-    sigReqChildWidgetsInfo = pyqtSignal(str)  # widgetId
-    sigChildMenuItemClicked = pyqtSignal(str)  # widgetId
-    sigChildMenuItemHovered = pyqtSignal(str)  # widgetId
+    sigReqChildWidgetsInfo = pyqtSignal(object)  # widgetId
+    sigChildMenuItemClicked = pyqtSignal(object)  # widgetId
+    sigChildMenuItemHovered = pyqtSignal(object)  # widgetId
 
     sigMouseLeaveBarAndMenu = pyqtSignal()  # The mouse leaves both the bar and the popup menu.
 
@@ -184,7 +184,7 @@ class HierarchyBar(QtWidgets.QWidget):
 
         self._buttonGroup = QtWidgets.QButtonGroup(self)
         self._buttonGroup.setExclusive(True)
-        self._buttonGroup.buttonToggled.connect(self._onButtonToggled)  # 不能用clicked, 因为鼠标事件被拦截
+        self._buttonGroup.buttonToggled.connect(self._onButtonToggled)  # Cannot use clicked because mouse events are intercepted.
 
         self._mainLayout = QtWidgets.QHBoxLayout(self)
         self._mainLayout.setContentsMargins(0, 0, 0, 0)
@@ -288,8 +288,8 @@ class HierarchyBar(QtWidgets.QWidget):
 
         if self._buttonGroup.buttons():  # not empty, set last item checked by default
             lastItem = self._buttonGroup.buttons()[-1]
-            # 之所以在这里设置, 是因为避免数据变更后emit sigAncestorItemChanged信号
-            # 导致重复获取数据
+            # Set it here to avoid emitting sigAncestorItemChanged after the data changes
+            # and fetching the same information twice.
             self._curCheckedItem = lastItem
             lastItem.setChecked(True)
 
@@ -303,9 +303,9 @@ class HierarchyBar(QtWidgets.QWidget):
 
         self._menu.move(posX, posY)
         if self._widgetIdOfCurrMenu != itemWidget.getWidgetId():
-            # 脏数据
+            # Stale data.
             self._menuWidget.setLoading()
-            self.sigReqChildWidgetsInfo.emit(str(itemWidget.getWidgetId()))
+            self.sigReqChildWidgetsInfo.emit(itemWidget.getWidgetId())
         self._menu.show()
 
     def notifyHideMenu(self, itemWidget: HierarchyItem):
@@ -318,12 +318,12 @@ class HierarchyBar(QtWidgets.QWidget):
             self._curItemWithMenuShowed.menuAboutToHide()
 
     def notifyItemHovered(self, itemWidget: HierarchyItem):
-        self.sigAncestorItemHovered.emit(str(itemWidget.getWidgetId()))
+        self.sigAncestorItemHovered.emit(itemWidget.getWidgetId())
 
     def _onButtonToggled(self, btn, checked):
         if checked and btn != self._curCheckedItem:
             self._curCheckedItem = btn
-            self.sigAncestorItemChanged.emit(str(btn.getWidgetId()))
+            self.sigAncestorItemChanged.emit(btn.getWidgetId())
 
     def setMenuData(self,
                     widgetId: int,
@@ -331,13 +331,13 @@ class HierarchyBar(QtWidgets.QWidget):
                     childObjNameList: typing.List[str],
                     childWidgetIdList: typing.List[int]):
         if self._curItemWithMenuShowed is None or widgetId != self._curItemWithMenuShowed.getWidgetId():
-            # 脏数据
+            # Stale data.
             return
 
         self._widgetIdOfCurrMenu = widgetId
         self._menuWidget.setMenuData(childClsNameList, childObjNameList, childWidgetIdList)
 
-    def _handleChildMenuItemHovered(self, widgetId: str):
+    def _handleChildMenuItemHovered(self, widgetId: int):
         if widgetId == "-1":
             return
 
@@ -347,7 +347,7 @@ class HierarchyBar(QtWidgets.QWidget):
         self._lastHoveredChildItemWidgetId = widgetId
         self.sigChildMenuItemHovered.emit(widgetId)
 
-    def _handleChildMenuItemClicked(self, widgetId: str):
+    def _handleChildMenuItemClicked(self, widgetId: int):
         self._menu.hide()
         if widgetId != "-1":
             self.sigChildMenuItemClicked.emit(widgetId)

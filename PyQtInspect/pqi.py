@@ -15,10 +15,11 @@ pyqt_inspect_module_dir = str(pathlib.Path(__file__).resolve().parent.parent)
 if pyqt_inspect_module_dir not in sys.path:
     sys.path.insert(0, pyqt_inspect_module_dir)
 
-from PyQtInspect._pqi_bundle._pqi_monkey_qt_helpers import filter_trace_stack
 from PyQtInspect._pqi_bundle.pqi_comm_constants import CMD_PROCESS_CREATED, CMD_QT_PATCH_SUCCESS
 from PyQtInspect._pqi_bundle.pqi_qt_tools import exec_code_in_widget, get_parent_info, get_widget_size, get_widget_pos, \
-    get_stylesheet, get_children_info, set_widget_highlight, get_widget_object_name, is_wrapped_pointer_valid
+    get_stylesheet, get_children_info, set_widget_highlight, get_widget_object_name, is_wrapped_pointer_valid, \
+    get_create_stack, get_control_tree
+from PyQtInspect._pqi_bundle.pqi_qt_widget_props_fetcher import WidgetPropertiesGetter
 from PyQtInspect._pqi_imps._pqi_saved_modules import threading, thread
 from PyQtInspect._pqi_bundle.pqi_contants import get_current_thread_id, SHOW_DEBUG_INFO_ENV, DebugInfoHolder, IS_WINDOWS
 from PyQtInspect._pqi_bundle.pqi_comm import PyDBDaemonThread, ReaderThread, get_global_debugger, set_global_debugger, \
@@ -34,9 +35,72 @@ import traceback
 threadingCurrentThread = threading.current_thread
 
 
-def enable_qt_support(qt_support_mode):
+def auto_patch_qt(is_attach: bool):
+    global SetupHolder
     import PyQtInspect._pqi_bundle.pqi_monkey_qt as monkey_qt
-    monkey_qt.patch_qt(qt_support_mode)
+    import ihook
+
+    def clear_ihook():
+        ihook.clear_hooks()
+        ihook.unpatch_meta_path()
+
+    # Mark that we're in auto-detect mode
+    # Used so that when patching child processes we can generate the parameter `qt-support=auto`
+    #   instead of a specific Qt library name.
+    #
+    # Why not use a specific library name? (like `qt-support=pyqt5`)
+    #   there may be a scenario where a PyQt5 program starts a PyQt6 program;
+    #   in that case the PyQt6 program would not be patched correctly.
+    SetupHolder.setup[SetupHolder.KEY_IS_AUTO_DISCOVER_QT_LIB] = True
+
+    # Why not merge them into a single loop + helper function?
+    # Because Python closures capture variables by reference (late binding), causing all hooks to see only the last value.
+
+    pyqt5_mod_lower_name = 'pyqt5'
+    @ihook.on_import(pyqt5_mod_lower_name, case_sensitive=False)
+    def _():
+        pqi_log.info("Auto patching PyQt5...")
+        clear_ihook()
+        # We need to set the value in setup to the exact library name because subsequent Qt patching needs it;
+        # 'auto' is only a placeholder and has no meaning later.
+        SetupHolder.setup[SetupHolder.KEY_QT_SUPPORT] = pyqt5_mod_lower_name
+        monkey_qt.patch_qt(pyqt5_mod_lower_name, is_attach)
+
+    pyqt6_mod_lower_name = 'pyqt6'
+    @ihook.on_import(pyqt6_mod_lower_name, case_sensitive=False)
+    def _():
+        pqi_log.info("Auto patching PyQt6...")
+        clear_ihook()
+        SetupHolder.setup[SetupHolder.KEY_QT_SUPPORT] = pyqt6_mod_lower_name
+        monkey_qt.patch_qt(pyqt6_mod_lower_name, is_attach)
+
+    pyside2_mod_lower_name = 'pyside2'
+    @ihook.on_import(pyside2_mod_lower_name, case_sensitive=False)
+    def _():
+        pqi_log.info("Auto patching PySide2...")
+        clear_ihook()
+        SetupHolder.setup[SetupHolder.KEY_QT_SUPPORT] = pyside2_mod_lower_name
+        monkey_qt.patch_qt(pyside2_mod_lower_name, is_attach)
+
+    pyside6_mod_lower_name = 'pyside6'
+    @ihook.on_import(pyside6_mod_lower_name, case_sensitive=False)
+    def _():
+        pqi_log.info("Auto patching PySide6...")
+        clear_ihook()
+        SetupHolder.setup[SetupHolder.KEY_QT_SUPPORT] = pyside6_mod_lower_name
+        monkey_qt.patch_qt(pyside6_mod_lower_name, is_attach)
+
+
+def enable_qt_support(qt_support_mode, is_attach: bool = False):
+    global SetupHolder
+    import PyQtInspect._pqi_bundle.pqi_monkey_qt as monkey_qt
+
+    if qt_support_mode == 'auto':
+        if is_attach:
+            raise RuntimeError("Qt lib auto detection is not supported in attach mode.")
+        auto_patch_qt(is_attach)
+        return
+    monkey_qt.patch_qt(qt_support_mode, is_attach)
 
 
 def get_fullname(mod_name):
@@ -122,7 +186,7 @@ def execfile(file, glob=None, loc=None):
 from PyQtInspect._pqi_common.pqi_setup_holder import SetupHolder
 
 
-class TrackedLock(object):
+class TrackedLock:
     """The lock that tracks if it has been acquired by the current thread
     """
 
@@ -168,7 +232,7 @@ def stoptrace():
         connected = False
 
 
-class PyDB(object):
+class PyDB:
     """ Main debugging class
     Lots of stuff going on here:
 
@@ -221,6 +285,8 @@ class PyDB(object):
         self._id_to_widget = {}
         self.global_event_filter = None
         self.global_native_event_filter = None
+
+        self._widget_props_getter = WidgetPropertiesGetter()
 
     def _try_reconnect(self):
         """
@@ -480,26 +546,28 @@ class PyDB(object):
     def register_widget(self, widget):
         self._id_to_widget[id(widget)] = widget
 
-    def set_widget_highlight_by_id(self, widget_id: int, is_highlight: bool):
+    def _safe_get_widget(self, widget_id):
         widget = self._id_to_widget.get(widget_id, None)
 
         if widget is None:
-            return
+            return None
 
         if not is_wrapped_pointer_valid(widget):
             del self._id_to_widget[widget_id]
+            return None
+
+        return widget
+
+    def set_widget_highlight_by_id(self, widget_id: int, is_highlight: bool):
+        widget = self._safe_get_widget(widget_id)
+        if widget is None:
             return
 
         set_widget_highlight(widget, is_highlight)
 
     def select_widget_by_id(self, widget_id):
-        widget = self._id_to_widget.get(widget_id, None)
-
+        widget = self._safe_get_widget(widget_id)
         if widget is None:
-            return
-
-        if not is_wrapped_pointer_valid(widget):
-            del self._id_to_widget[widget_id]
             return
 
         self.select_widget(widget)
@@ -517,7 +585,7 @@ class PyDB(object):
             class_name=widget.__class__.__name__,
             object_name=get_widget_object_name(widget),
             id=id(widget),
-            stacks_when_create=filter_trace_stack(getattr(widget, '_pqi_stacks_when_create', [])),
+            stacks_when_create=get_create_stack(widget),
             size=get_widget_size(widget),
             pos=get_widget_pos(widget),
             parent_classes=parent_classes,
@@ -529,32 +597,21 @@ class PyDB(object):
         self.send_widget_message(widget_info)
 
     def notify_widget_info(self, widget_id, extra):
-        widget = self._id_to_widget.get(widget_id, None)
-
+        widget = self._safe_get_widget(widget_id)
         if widget is None:
-            return
-
-        if not is_wrapped_pointer_valid(widget):
-            del self._id_to_widget[widget_id]
             return
 
         self.send_widget_info_to_server(widget, extra)
 
     def notify_children_info(self, widget_id):
         """
-        Notify the children information of the given widget to the PyDB debugger.
+        Notify the children information of the given widget to the debugger.
 
         @param widget_id: The ID of the widget.
-
         @note: used for the bottom hierarchy view of the server GUI program.
         """
-        widget = self._id_to_widget.get(widget_id, None)
-
+        widget = self._safe_get_widget(widget_id)
         if widget is None:
-            return
-
-        if not is_wrapped_pointer_valid(widget):
-            del self._id_to_widget[widget_id]
             return
 
         children_info_list = list(get_children_info(widget))
@@ -572,14 +629,28 @@ class PyDB(object):
         cmd = self.cmd_factory.make_children_info_message(children_info)
         self.writer.add_command(cmd)
 
+    def notify_control_tree(self, extra):
+        control_tree = get_control_tree()
+        cmd = self.cmd_factory.make_control_tree_message(control_tree, extra)
+        self.writer.add_command(cmd)
+
+    def notify_widget_props(self, widget_id):
+        widget = self._safe_get_widget(widget_id)
+        if widget is None:
+            return
+        widget_props = self._widget_props_getter.get_object_properties(widget)
+        cmd = self.cmd_factory.make_widget_props_message(widget_props)
+        self.writer.add_command(cmd)
+
 
 def set_debug(setup):
     import logging
 
-    setup['DEBUG_RECORD_SOCKET_READS'] = True
-    setup['LOG_TO_FILE_LEVEL'] = logging.DEBUG
-    setup['LOG_TO_CONSOLE_LEVEL'] = logging.DEBUG
-    setup['SHOW_CONNECTION_ERRORS'] = True
+    setup[SetupHolder.KEY_IS_DEBUG_MODE] = True
+    setup[SetupHolder.KEY_DEBUG_RECORD_SOCKET_READS] = True
+    setup[SetupHolder.KEY_LOG_TO_FILE_LEVEL] = logging.DEBUG
+    setup[SetupHolder.KEY_LOG_TO_CONSOLE_LEVEL] = logging.DEBUG
+    setup[SetupHolder.KEY_SHOW_CONNECTION_ERRORS] = True
 
 
 # =======================================================================================================================
@@ -632,13 +703,13 @@ def _locked_settrace(
 ):
     if SetupHolder.setup is None:
         setup = {
-            'client': host,  # dispatch expects client to be set to the host address when server is False
-            'server': False,
-            'port': int(port),
-            'multiprocess': patch_multiprocessing,
-            'qt-support': qt_support,
-            'stack-max-depth': 0,
-            'show-pqi-stack': False,
+            SetupHolder.KEY_CLIENT: host,  # dispatch expects client to be set to the host address when server is False
+            SetupHolder.KEY_SERVER: False,
+            SetupHolder.KEY_PORT: int(port),
+            SetupHolder.KEY_MULTIPROCESS: patch_multiprocessing,
+            SetupHolder.KEY_QT_SUPPORT: qt_support,
+            SetupHolder.KEY_STACK_MAX_DEPTH: 0,
+            SetupHolder.KEY_SHOW_PQI_STACK: False,
         }
         SetupHolder.setup = setup
 
@@ -674,7 +745,7 @@ def _locked_settrace(
     except:
         pass
     else:
-        PyQtInspect._pqi_bundle.pqi_monkey_qt.patch_qt(qt_support, is_attach=is_attach)
+        enable_qt_support(qt_support, is_attach)
 
 
 # =======================================================================================================================
@@ -684,7 +755,7 @@ def usage(do_exit=True, exit_code=0):
     sys.stdout.write('Usage:\n')
     sys.stdout.write(
         '\tpqi.py [--port N --client hostname | --direct] [--multiprocess] [--show-pqi-stack] '
-        '--qt-support=[pyqt5|pyqt6|pyside2|pyside6] '
+        '--qt-support=[auto|pyqt5|pyqt6|pyside2|pyside6] '
         '--file executable [file_options]\n'
     )
     if do_exit:
@@ -701,32 +772,42 @@ def main():
         traceback.print_exc()
         return usage(exit_code=1)
 
+    # Handle `--help`: show usage and exit
+    if setup.get(SetupHolder.KEY_HELP):
+        return usage()
+
     # for debug
-    if SHOW_DEBUG_INFO_ENV:
+    if SHOW_DEBUG_INFO_ENV or setup.get(SetupHolder.KEY_IS_DEBUG_MODE):
         set_debug(setup)
 
-    DebugInfoHolder.DEBUG_RECORD_SOCKET_READS = setup.get('DEBUG_RECORD_SOCKET_READS',
+    DebugInfoHolder.DEBUG_RECORD_SOCKET_READS = setup.get(SetupHolder.KEY_DEBUG_RECORD_SOCKET_READS,
                                                           DebugInfoHolder.DEBUG_RECORD_SOCKET_READS)
-    DebugInfoHolder.LOG_TO_FILE_LEVEL = setup.get('LOG_TO_FILE_LEVEL', DebugInfoHolder.LOG_TO_FILE_LEVEL)
-    DebugInfoHolder.LOG_TO_CONSOLE_LEVEL = setup.get('LOG_TO_CONSOLE_LEVEL', DebugInfoHolder.LOG_TO_CONSOLE_LEVEL)
+    DebugInfoHolder.LOG_TO_FILE_LEVEL = setup.get(SetupHolder.KEY_LOG_TO_FILE_LEVEL, DebugInfoHolder.LOG_TO_FILE_LEVEL)
+    DebugInfoHolder.LOG_TO_CONSOLE_LEVEL = setup.get(SetupHolder.KEY_LOG_TO_CONSOLE_LEVEL, DebugInfoHolder.LOG_TO_CONSOLE_LEVEL)
 
     # connect
-    is_direct_mode = setup.get('direct', False)
+    is_direct_mode = setup.get(SetupHolder.KEY_DIRECT, False)
     if not is_direct_mode:
-        port = setup['port']
-        host = setup['client']
+        port = setup[SetupHolder.KEY_PORT]
+        host = setup[SetupHolder.KEY_CLIENT]
     else:
         # ===============================================
         #  Direct mode: run the server at the same time
         # ===============================================
         # Override the host and port to localhost and a random port
-        host = setup['client'] = '127.0.0.1'
-        port = setup['port'] = random_port()
+        host = setup[SetupHolder.KEY_CLIENT] = '127.0.0.1'
+        port = setup[SetupHolder.KEY_PORT] = random_port()
         # Run server first
+        server_args = ['--port', str(port), '--direct']
+        if setup.get(SetupHolder.KEY_IS_DEBUG_MODE, False):
+            server_args.append('--debug')
+
         try:
             # Run with detached mode
+            args = ['pqi-server', *server_args]
+            pqi_log.debug(f'Starting pqi-server with args: {args}')
             subprocess.Popen(
-                ['pqi-server', '--port', str(port), '--direct'],
+                args,
                 close_fds=True, stdin=None, stdout=None, stderr=None,
             )
         except Exception as e:
@@ -736,9 +817,8 @@ def main():
             try:
                 gui_entry = find_pqi_server_gui_entry()
                 subprocess.Popen(
-                    [sys.executable, gui_entry, '--port', str(port), '--direct'],
+                    [sys.executable, gui_entry, *server_args],
                     close_fds=True, stdin=None, stdout=None, stderr=None,
-                    creationflags=subprocess.DETACHED_PROCESS if IS_WINDOWS else 0,
                 )
             except:
                 # OK, we tried our best, let's give up...
@@ -754,7 +834,7 @@ def main():
             debugger.connect(
                 host, port,
                 # show connection errors if (1. not in direct mode) or (2. in debug mode)
-                output_connection_errors=(not is_direct_mode or setup.get('SHOW_CONNECTION_ERRORS', False))
+                output_connection_errors=(not is_direct_mode or setup.get(SetupHolder.KEY_SHOW_CONNECTION_ERRORS, False))
             )
             # Connected successfully, break the loop.
             break
@@ -776,15 +856,15 @@ def main():
 
     import PyQtInspect._pqi_bundle.pqi_monkey
 
-    if setup['multiprocess']:
+    if setup[SetupHolder.KEY_MULTIPROCESS]:
         PyQtInspect._pqi_bundle.pqi_monkey.patch_new_process_functions()
 
-    is_module = setup['module']
+    is_module = setup[SetupHolder.KEY_MODULE]
 
-    enable_qt_support(setup['qt-support'])
+    enable_qt_support(setup[SetupHolder.KEY_QT_SUPPORT])
 
-    if setup['file']:
-        debugger.run(setup["file"], None, None, is_module)
+    if setup[SetupHolder.KEY_FILE]:
+        debugger.run(setup[SetupHolder.KEY_FILE], None, None, is_module)
 
 
 if __name__ == '__main__':

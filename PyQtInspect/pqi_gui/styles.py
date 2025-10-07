@@ -1,97 +1,96 @@
 # -*- encoding:utf-8 -*-
-# https://wiki.python.org/moin/PyQt/Python%20syntax%20highlighting
 
-GLOBAL_STYLESHEET2 = """
-QPushButton {
-    border: 1px solid rgba(31, 35, 40, 0.15);
-    border-radius: 2px;
-    padding-left: 8px;
-    padding-right: 8px;
-    background-color: rgb(246, 248, 250);
-    font: 12px "Microsoft Yahei";
-    color: rgb(36, 41, 47);
-}
 
-QPushButton:hover {
-    border: 1px solid rgb(221, 221, 221);
-}
-"""
+def _get_default_font():
+    import sys
+    if sys.platform == 'win32':  # Windows
+        return 'Microsoft Yahei'
+    elif sys.platform == 'darwin':  # macOS
+        return 'Helvetica'
+    else:  # Linux
+        return 'DejaVu Sans'
 
-GLOBAL_STYLESHEET = """
-* {
-    font-family: "Microsoft Yahei";
-}
 
-QMainWindow {
-    background-color: #F0F0F0;
-}
+GLOBAL_STYLESHEET = f"""
+* {{
+    font-family: {_get_default_font()};
+}}
 
-QPushButton {
+QPushButton {{
     background-color: #FAFBFC;
     border: 1px solid rgba(27, 31, 35, 0.15);
     border-radius: 3px;
     color: #24292E;
-    font: 12px "Microsoft Yahei";
+    font-size: 12px;
     padding: 6px 10px;
-}
+}}
 
-QPushButton:hover {
+QPushButton:hover {{
     background-color: #F3F4F6;
-}
+}}
 
-QPushButton:pressed {
+QPushButton:pressed {{
     background-color: #EDEFF2;
-}
+}}
 
-QPushButton:checked {
+QPushButton:checked {{
     background-color: #EDEFF2;
-}
+}}
 
-QPushButton:disabled {
+QPushButton:disabled {{
     background-color: #FAFBFC;
     border-color: rgba(27, 31, 35, 0.15);
     color: #959DA5;
-}
+}}
 
-QLineEdit {
+QLineEdit {{
     border: 1px solid #D1D5DA;
     border-radius: 3px;
     padding: 6px 8px;
-    font: 12px "Microsoft Yahei";
+    font-size: 12px;
     color: #24292E;
-}
+}}
 
-QLineEdit:hover {
+QLineEdit:hover {{
     border-color: #0366D6;
-}
+}}
 
-QLineEdit:focus {
+QLineEdit:focus {{
     border-color: #0366D6;
     outline: none;
-}
+}}
 
-QLineEdit:disabled {
+QLineEdit:disabled {{
     background-color: #F0F0F0;
     border-color: rgba(27, 31, 35, 0.15);
     color: #959DA5;
-}
+}}
 
-QLineEdit#codeStyleLineEdit {
+QLineEdit#codeStyleLineEdit {{
     font: 13px "Consolas";
-}
+}}
 
-QListWidget#stacksListWidget {
-    border: 1px solid #D1D5DA;
-    border-radius: 3px;
+CreateStacksListWidget {{
+    border: none;
     font: 13px "Consolas";
     color: #24292E;
-}
+}}
 
-QListWidget#stacksListWidget::item {
+CreateStacksListWidget::item {{
     padding: 2px 0px;
-}
+}}
 
-QGroupBox {
-    font: 13px "Microsoft Yahei";
-}
+QGroupBox {{
+    font-size: 13px;
+}}
+
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0px 5px;
+}}
+
+WidgetPropsTreeWidget {{
+    border: none;
+}}
 """

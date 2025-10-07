@@ -4,7 +4,7 @@ import os
 import sys
 
 from PyQtInspect._pqi_bundle import pqi_log
-from PyQtInspect._pqi_bundle._pqi_monkey_qt_helpers import patch_QtWidgets
+from PyQtInspect._pqi_bundle.pqi_monkey_qt_helpers import patch_QtWidgets
 from PyQtInspect._pqi_bundle.pqi_contants import IS_WINDOWS
 from PyQtInspect._pqi_bundle.pqi_monkey import str_to_args_windows, is_python, patch_args
 
@@ -70,65 +70,14 @@ def patch_qt(qt_support_mode, is_attach=False):
     if not qt_support_mode:
         return
 
-    if qt_support_mode is True or qt_support_mode == 'True':
-        # do not break backward compatibility
-        qt_support_mode = 'auto'
-
-    if qt_support_mode == 'auto':
-        qt_support_mode = os.getenv('PYDEVD_PYQT_MODE', 'auto')
-
     # Avoid patching more than once
     global _patched_qt
     if _patched_qt:
         return
-
     _patched_qt = True
 
-    if qt_support_mode == 'auto':
-
-        patch_qt_on_import = None
-        try:
-            if IS_PY38:
-                raise ImportError
-            import PySide6
-            qt_support_mode = 'pyside6'
-        except:
-            try:
-                # PY-50959
-                # Problem:
-                # 1. We have Python 3.8;
-                # 2. PyQt compatible = Auto or PySide2;
-                # 3. We try to import numpy, we get "AttributeError: module 'numpy.core' has no attribute 'numerictypes'"
-                #
-                # Solution:
-                # We decided to turn off patching for PySide2 if we have Python 3.8
-                # Here we skip 'import PySide2' and keep trying to import another qt libraries
-                if IS_PY38:
-                    raise ImportError
-                import PySide2  # @UnresolvedImport @UnusedImport
-                qt_support_mode = 'pyside2'
-            except:
-                try:
-                    import Pyside  # @UnresolvedImport @UnusedImport
-                    qt_support_mode = 'pyside'
-                except:
-                    try:
-                        import PyQt6  # @UnresolvedImport @UnusedImport
-                        qt_support_mode = 'pyqt6'
-                    except:
-                        try:
-                            import PyQt5  # @UnresolvedImport @UnusedImport
-                            qt_support_mode = 'pyqt5'
-                        except:
-                            try:
-                                import PyQt4  # @UnresolvedImport @UnusedImport
-                                qt_support_mode = 'pyqt4'
-                            except:
-                                return
-
     if qt_support_mode == 'pyside6':
-        if IS_PY38:
-            return
+        # PY-50959 (if python == 3.8 && pyside) may not influence PyQtInspect
         try:
             import PySide6.QtCore  # @UnresolvedImport
             import PySide6.QtWidgets  # @UnresolvedImport
@@ -139,11 +88,7 @@ def patch_qt(qt_support_mode, is_attach=False):
         except:
             return
     elif qt_support_mode == 'pyside2':
-        # PY-50959
-        # We can get here only if PyQt compatible = PySide2, in this case we should return
-        # See comment above about PY-50959
-        if IS_PY38:
-            return
+        # PY-50959 (if python == 3.8 && pyside) may not influence PyQtInspect
         try:
             import PySide2.QtCore  # @UnresolvedImport
             import PySide2.QtWidgets  # @UnresolvedImport
@@ -151,13 +96,6 @@ def patch_qt(qt_support_mode, is_attach=False):
 
             _internal_patch_qt(PySide2.QtCore, qt_support_mode)
             _internal_patch_qt_widgets(PySide2, qt_support_mode, is_attach)
-        except:
-            return
-
-    elif qt_support_mode == 'pyside':
-        try:
-            import PySide.QtCore  # @UnresolvedImport
-            _internal_patch_qt(PySide.QtCore, qt_support_mode)
         except:
             return
 
@@ -184,52 +122,8 @@ def patch_qt(qt_support_mode, is_attach=False):
             pqi_log.error('Error patching PyQt5', exc_info=True)
             return
 
-    # todo PyQt4
-    # elif qt_support_mode == 'pyqt4':
-    #     # Ok, we have an issue here:
-    #     # PyDev-452: Selecting PyQT API version using sip.setapi fails in debug mode
-    #     # http://pyqt.sourceforge.net/Docs/PyQt4/incompatible_apis.html
-    #     # Mostly, if the user uses a different API version (i.e.: v2 instead of v1),
-    #     # that has to be done before importing PyQt4 modules (PySide/PyQt5 don't have this issue
-    #     # as they only implements v2).
-    #     patch_qt_on_import = 'PyQt4'
-    #     def get_qt_core_module():
-    #         import PyQt4.QtCore  # @UnresolvedImport
-    #         return PyQt4.QtCore
-    #     _patch_import_to_patch_pyqt_on_import(patch_qt_on_import, get_qt_core_module)
-
     else:
         raise ValueError('Unexpected qt support mode: %s' % (qt_support_mode,))
-
-
-# def _patch_import_to_patch_pyqt_on_import(patch_qt_on_import, get_qt_core_module):
-#     # I don't like this approach very much as we have to patch __import__, but I like even less
-#     # asking the user to configure something in the client side...
-#     # So, our approach is to patch PyQt4 right before the user tries to import it (at which
-#     # point he should've set the sip api version properly already anyways).
-#
-#     dotted = patch_qt_on_import + '.'
-#     original_import = __import__
-#
-#     from _pydev_imps._pydev_sys_patch import patch_sys_module, patch_reload, cancel_patches_in_sys_module
-#
-#     patch_sys_module()
-#     patch_reload()
-#
-#     def patched_import(name, *args, **kwargs):
-#         if patch_qt_on_import == name or name.startswith(dotted):
-#             builtins.__import__ = original_import
-#             cancel_patches_in_sys_module()
-#             _internal_patch_qt(get_qt_core_module()) # Patch it only when the user would import the qt module
-#         return original_import(name, *args, **kwargs)
-#
-#     import sys
-#     if sys.version_info[0] >= 3:
-#         import builtins # Py3
-#     else:
-#         import __builtin__ as builtins
-#
-#     builtins.__import__ = patched_import
 
 
 def _internal_patch_qt(QtCore, qt_support_mode='auto'):
@@ -295,11 +189,11 @@ def _internal_patch_qt(QtCore, qt_support_mode='auto'):
                 self.run = self._pqi_exec_run
             else:
                 # MUST ADD PREFIX '_pqi_' to the method name, otherwise it will cause infinite recursion
-                # 如果使用和pydevd相同的变量名
-                # 则根据继承关系 QThead的子类 -> QThreadWrapper in pqi -> QThreadWrapper in pydevd -> QThread
-                # pqi中的self._pqi_original_run会指向pydevd中的self.run,
-                # 而此时self.run已经被pqi中的self._pqi_new_run(in pqi!!! pqi层的QThreadWrapper同名方法覆盖了pydevd层的方法)替换
-                # 因此会无限递归pqi层面的QThreadWrapper的self._pqi_new_run方法
+                # If we use the same variable names as pydevd,
+                # the inheritance chain becomes: QThread subclass -> QThreadWrapper in PyQtInspect -> QThreadWrapper in pydevd -> QThread.
+                # In that case, self._pqi_original_run in PyQtInspect would point to pydevd's self.run,
+                # but self.run has already been replaced by PyQtInspect's self._pqi_new_run (the PyQtInspect-level QThreadWrapper overrides the method in pydevd),
+                # leading the PyQtInspect QThreadWrapper to recurse infinitely into self._pqi_new_run.
                 self._pqi_original_run = self.run
                 self.run = self._pqi_new_run
             self._original_started = self.started
@@ -380,13 +274,14 @@ def _internal_patch_qt(QtCore, qt_support_mode='auto'):
             if self._pqi_original_program is None or self._pqi_original_arguments is None:
                 # If the QProcess instance is reused, we need to restore the original program and arguments
                 # todo
-                # 如果复用, 则必须调用start、startDetached、open方法, 这种时候self._pqi_original_arguments都不会为None
-                # 且 self._pqi_original_program 和 self._pqi_original_arguments 可保证是原始的参数
-                # (都拦截到了, 且method3的调用前需要setProgram和setArguments方法)
+                # If the QProcess instance is reused, it must have invoked start, startDetached, or open,
+                # so self._pqi_original_arguments will never be None.
+                # In that scenario, self._pqi_original_program and self._pqi_original_arguments are guaranteed to hold the original parameters
+                # because we intercept them, and method3 requires setProgram and setArguments to be called beforehand.
                 #
-                # 没有复用，method3的调用有两个前提情况
-                # 前面调用过setProgram、setArguments方法: self._pqi_original_program和self._pqi_original_arguments都不为None
-                # 没有调用: 则self._pqi_original_program和self._pqi_original_arguments都为None, 这里会调用原始的program和arguments方法
+                # Without reuse, method3 has two prerequisite situations:
+                # - If setProgram and setArguments were called earlier, both self._pqi_original_program and self._pqi_original_arguments are not None.
+                # - If they were not called, both attributes remain None, and we fall back to the original program and arguments methods here.
                 self._pqi_original_program = self._pqi_original_program_method()
                 self._pqi_original_arguments = self._pqi_original_arguments_method()
             arguments = [self._pqi_original_program] + self._pqi_original_arguments
@@ -477,44 +372,50 @@ def _internal_patch_qt(QtCore, qt_support_mode='auto'):
             return _original_QProcess_execute(patched_arguments[0], patched_arguments[1:])
 
         # Patch hybrid methods (static or member)
-        def startDetached(__arg1=_EMPTY, __arg2=_EMPTY, __arg3=_EMPTY, *args, **kwargs):
+        def startDetached(__arg1=_EMPTY, __arg2=_EMPTY, __arg3=_EMPTY, __arg4=_EMPTY, *args, **kwargs):
             """
-            startDetached(program: Optional[str], arguments: Iterable[Optional[str]], workingDirectory: Optional[str]) -> (bool, Optional[int])
-            startDetached(program: Optional[str], arguments: Iterable[Optional[str]])
-            startDetached(command: Optional[str]) #!!! it is a command!
-            startDetached(self) -> (bool, Optional[int])
+            - Static methods:
+              startDetached(program: Optional[str], arguments: Iterable[Optional[str]], workingDirectory: Optional[str]) -> (bool, Optional[int])
+              startDetached(program: Optional[str], arguments: Iterable[Optional[str]])
+              startDetached(command: Optional[str]) #!!! it is a command!
+
+            - Member methods:
+              startDetached(self) -> (bool, Optional[int])
             """
             if args or kwargs:  # if there are other params, raise an error
                 raise RuntimeError('Not supported')
 
             if isinstance(__arg1, _original_QProcess):  # member method
                 # startDetached(self) -> (bool, Optional[int])
-                if __arg2 is not _EMPTY or __arg3 is not _EMPTY:
-                    raise TypeError('startDetached() takes 1 positional argument but 3 were given')
-                self = __arg1
-                self._pqi_patch_original_program_and_args()
-                return _original_QProcess_startDetached(self)
-            else:  # static method
-                if __arg1 is _EMPTY and __arg2 is _EMPTY and __arg3 is _EMPTY:  # no params
-                    # start(self, mode = QIODevice.ReadWrite)
-                    return _original_QProcess_startDetached()  # must raise an error
-                elif __arg2 is _EMPTY and __arg3 is _EMPTY:  # single param
-                    # startDetached(command: Optional[str])
-                    command = __arg1
-                    arguments = (str_to_args_windows if IS_WINDOWS else _qt_split_command)(command)
-                    patched_arguments = patch_args(arguments)
-                    patched_command = ' '.join(patched_arguments)
-                    return _original_QProcess_startDetached(patched_command)
-                elif __arg3 is _EMPTY:  # two params
-                    # startDetached(program: Optional[str], arguments: Iterable[Optional[str]])
-                    program, arguments = __arg1, __arg2
-                    patched_arguments = patch_args([program] + arguments)
-                    return _original_QProcess_startDetached(patched_arguments[0], patched_arguments[1:])
-                else:  # three params
-                    # startDetached(program: Optional[str], arguments: Iterable[Optional[str]], workingDirectory: Optional[str])
-                    program, arguments, workingDir = __arg1, __arg2, __arg3
-                    patched_arguments = patch_args([program] + arguments)
-                    return _original_QProcess_startDetached(patched_arguments[0], patched_arguments[1:], workingDir)
+                if __arg2 is _EMPTY and __arg3 is _EMPTY and __arg4 is _EMPTY:
+                    self = __arg1
+                    self._pqi_patch_original_program_and_args()
+                    return _original_QProcess_startDetached(self)
+                else:  # maybe the user called the static method with the instance
+                    # remove the self parameter, and left-shift the other parameters
+                    __arg1, __arg2, __arg3, __arg4 = __arg2, __arg3, __arg4, _EMPTY  # noqa
+
+            # static method
+            if __arg1 is _EMPTY and __arg2 is _EMPTY and __arg3 is _EMPTY:  # no params
+                # start(self, mode = QIODevice.ReadWrite)
+                return _original_QProcess_startDetached()  # must raise an error
+            elif __arg2 is _EMPTY and __arg3 is _EMPTY:  # single param
+                # startDetached(command: Optional[str])
+                command = __arg1
+                arguments = (str_to_args_windows if IS_WINDOWS else _qt_split_command)(command)
+                patched_arguments = patch_args(arguments)
+                patched_command = ' '.join(patched_arguments)
+                return _original_QProcess_startDetached(patched_command)
+            elif __arg3 is _EMPTY:  # two params
+                # startDetached(program: Optional[str], arguments: Iterable[Optional[str]])
+                program, arguments = __arg1, __arg2
+                patched_arguments = patch_args([program] + arguments)
+                return _original_QProcess_startDetached(patched_arguments[0], patched_arguments[1:])
+            else:  # three params
+                # startDetached(program: Optional[str], arguments: Iterable[Optional[str]], workingDirectory: Optional[str])
+                program, arguments, workingDir = __arg1, __arg2, __arg3
+                patched_arguments = patch_args([program] + arguments)
+                return _original_QProcess_startDetached(patched_arguments[0], patched_arguments[1:], workingDir)
 
     QtCore.QThread = ThreadWrapper
     QtCore.QRunnable = RunnableWrapper

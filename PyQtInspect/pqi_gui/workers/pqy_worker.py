@@ -4,6 +4,7 @@ from PyQt5 import QtCore
 import traceback
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, SHUT_RDWR
 
+from PyQtInspect._pqi_bundle.pqi_typing import OptionalDict
 from PyQtInspect.pqi_gui.workers.dispatcher import Dispatcher
 
 
@@ -18,8 +19,8 @@ class PQYWorker(QtCore.QObject):
         super().__init__(parent)
         self.port = port
 
-        self.dispatchers = []
-        self.idToDispatcher = {}
+        self.dispatchers = []  # type: list[Dispatcher]
+        self.idToDispatcher = {}  # type: dict[int, Dispatcher]
 
         self._isServing = False
         self._socket = None
@@ -113,7 +114,7 @@ class PQYWorker(QtCore.QObject):
         if dispatcher:
             dispatcher.sendSelectWidgetEvent(widgetId)
 
-    def sendRequestWidgetInfoEvent(self, dispatcherId: int, widgetId: int, extra: dict = None):
+    def sendRequestWidgetInfoEvent(self, dispatcherId: int, widgetId: int, extra: OptionalDict = None):
         dispatcher = self.idToDispatcher.get(dispatcherId)
         if dispatcher:
             dispatcher.sendRequestWidgetInfoEvent(widgetId, extra)
@@ -122,6 +123,16 @@ class PQYWorker(QtCore.QObject):
         dispatcher = self.idToDispatcher.get(dispatcherId)
         if dispatcher:
             dispatcher.sendRequestChildrenInfoEvent(widgetId)
+
+    def sendRequestControlTreeInfoEvent(self, dispatcherId: int, extra: OptionalDict = None):
+        dispatcher = self.idToDispatcher.get(dispatcherId)
+        if dispatcher:
+            dispatcher.sendRequestControlTreeInfoEvent(extra)
+
+    def sendRequestWidgetPropsEvent(self, dispatcherId: int, widgetId: int):
+        dispatcher = self.idToDispatcher.get(dispatcherId)
+        if dispatcher:
+            dispatcher.sendRequestWidgetPropsEvent(widgetId)
 
     def _onDispatcherClosed(self, id: int):
         try:
