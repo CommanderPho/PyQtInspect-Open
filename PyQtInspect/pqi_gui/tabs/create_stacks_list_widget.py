@@ -1,7 +1,10 @@
 import os
 
 from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQtInspect.pqi_gui.settings import getPyCharmPath, findDefaultPycharmPath, setPyCharmPath
+
+from PyQtInspect._pqi_bundle import pqi_log
+from PyQtInspect.pqi_gui.common_operators import CommonOperators
+from PyQtInspect.pqi_gui.settings.ide_jumpers import jump_to_ide
 
 
 class CreateStacksListWidget(QtWidgets.QListWidget):
@@ -11,6 +14,14 @@ class CreateStacksListWidget(QtWidgets.QListWidget):
         super().__init__(parent)
         self.setMinimumHeight(200)
         self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+
+        # Message box
+        self._messageBox = QtWidgets.QMessageBox(self)
+        self._messageBox.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        self._messageBox.setWindowTitle('Error')
+
+        self._messageBoxConfigureBtn = self._messageBox.addButton('Configure IDE', QtWidgets.QMessageBox.ButtonRole.ActionRole)
+        self._messageBoxOkBtn = self._messageBox.addButton('OK', QtWidgets.QMessageBox.ButtonRole.ActionRole)
 
     def setStacks(self, stacks: list):
         self.clear()
@@ -44,24 +55,16 @@ class CreateStacksListWidget(QtWidgets.QListWidget):
                     # todo add a dialog to ask user to map the file
                     ...
 
-    def findPycharm(self):
-        pycharmPath = getPyCharmPath()
-        if not pycharmPath:
-            pycharmPath = findDefaultPycharmPath()
-            if pycharmPath:
-                setPyCharmPath(pycharmPath)
-        return pycharmPath
-
     def openFile(self, fileName: str, lineNo: int):
-        # open in Pycharm
-        import subprocess
-        pycharm = self.findPycharm()
-        if pycharm:
-            try:
-                subprocess.Popen(f'"{pycharm}" --line {lineNo} "{fileName}"', shell=True)
-            except Exception as e:
-                # message box
-                QtWidgets.QMessageBox.critical(self, "Error", f"Error occurred when opening file: {e}")
-        else:
-            QtWidgets.QMessageBox.critical(self, "Error", "Pycharm not found")
-        # subprocess.Popen(f"pycharm64.exe --line {lineNo} {fileName}")
+        # open in IDE
+        try:
+            pqi_log.info(f'Opening file: {fileName} at line {lineNo}...')
+            jump_to_ide(fileName, lineNo)
+        except Exception as e:
+            pqi_log.error(f"Failed to jump to IDE: {e}")
+            # show message box
+            self._messageBox.setText(f"{e}")
+            self._messageBox.exec()
+            if self._messageBox.clickedButton() == self._messageBoxConfigureBtn:
+                CommonOperators.instance().openSettings()
+

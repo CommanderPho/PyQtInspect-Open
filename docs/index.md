@@ -6,7 +6,7 @@
 
 <p align="center">
 <a href="https://github.com/JezaChen/PyQtInspect-Open">Source Code</a> |
-<a href="https://pyqtinspect.jeza.net/index_zh">中文文档</a> | 
+<a href="/index_zh">中文文档</a> | 
 <a href="https://pypi.org/project/PyQtInspect/">PyPI</a>
 </p>
 
@@ -40,14 +40,17 @@ you can install from git or download the source ZIP package and install after ex
 ```bash
 pip install git+https://github.com/JezaChen/PyQtInspect-Open.git
 ```
+<blockquote>
 
-> ⚠️ **Note:** Installing directly from the default branch is not reproducible. For deterministic installs, pin to a specific tag or commit.
-> ```
-> # pin to a specific tag
-> pip install git+https://github.com/JezaChen/PyQtInspect-Open.git@v0.4.0
-> # or pin to a specific commit
-> pip install git+https://github.com/JezaChen/PyQtInspect-Open.git@<commit-sha>
-> ```
+⚠️ <b>Note:</b> Installing directly from the default branch is not reproducible. For deterministic installs, pin to a specific tag or commit.
+```
+# pin to a specific tag
+pip install git+https://github.com/JezaChen/PyQtInspect-Open.git@v0.4.0
+# or pin to a specific commit
+pip install git+https://github.com/JezaChen/PyQtInspect-Open.git@<commit-sha>
+```
+
+</blockquote>
 
 **Install from Source ZIP:**
 1. Download [the source ZIP package](https://github.com/JezaChen/PyQtInspect-Open/archive/refs/heads/master.zip)
@@ -69,17 +72,17 @@ The `PyQtInspect` architecture has two parts:
 
 Two startup modes are supported:
 
-* [**Detached Mode**](#33-detached-mode-traditional-method-one-to-many-debugging): Manually start the GUI server first, then start the debuggee to connect to it. **When the debuggee exits, the GUI server remains running.**
+* [**Detached Mode**](#detached-mode): Manually start the GUI server first, then start the debuggee to connect to it. **When the debuggee exits, the GUI server remains running.**
 
-* [**Direct Mode (Recommended)**](#32-direct-mode-convenient-method-recommended-): Start only the debuggee; it will **launch a local GUI server automatically** (no need to start the server yourself). **When the debuggee exits, the GUI server exits with it.**
+* [**Direct Mode (Recommended)**](#direct-mode): Start only the debuggee; it will **launch a local GUI server automatically** (no need to start the server yourself). **When the debuggee exits, the GUI server exits with it.**
 
 Note that in **Direct Mode**, each client (debuggee) creates its own server, i.e., one-to-one relationship. Also in **Direct Mode**, you cannot manually specify the listening port, close connections, or attach to processes.
 
 **Detached Mode** supports remote debugging (server and client on different machines). **Direct Mode** does not, since the client and its auto-launched server run on the same machine.
 
-PyQtInspect also supports [running in IDEs like PyCharm](#341-run-pyqtinspect-in-pycharm-and-other-ides-supports-detached-mode-direct-mode) and [attaching to an existing PyQt/PySide process](#342-attach-to-process-detached-mode-only-currently-unstable).
+PyQtInspect also supports [running in IDEs like PyCharm](#run-pyqtinspect-in-pycharm-and-other-ides) and [attaching to an existing PyQt/PySide process](#attach-to-process).
 
-### 3.2 Direct Mode (Convenient method, recommended 👍)
+### 3.2 Direct Mode (Convenient method, recommended 👍) { #direct-mode }
 
 This **recommended** one-step method launches both the PyQtInspect server and client together. It requires full access to the Python source code of the debugged program.
 
@@ -110,7 +113,7 @@ For example, to debug the PySide2 version of [`PyQt-Fluent-Widgets`][1], whose d
 
 > Note: When using PyCharm or other IDEs that rely on the pydevd debugger, **ensure the IDE’s [‘PyQt compatible’ option][4] matches the Qt framework used by your project**, otherwise PyQtInspect may not work correctly or could crash the program.
 
-### 3.3 Detached Mode (Traditional method, one-to-many debugging)
+### 3.3 Detached Mode (Traditional method, one-to-many debugging) { #detached-mode }
 
 In Detached Mode, **make sure to start the GUI server before launching the debugged Python program**.
 
@@ -154,7 +157,7 @@ Again using the PySide2 version of [`PyQt-Fluent-Widgets`][1] as an example: if 
 
 ### 3.4 Other run methods
 
-#### 3.4.1 Run PyQtInspect in PyCharm and other IDEs (supports Detached Mode/Direct Mode)
+#### 3.4.1 Run PyQtInspect in PyCharm and other IDEs (supports Detached Mode/Direct Mode) { #run-pyqtinspect-in-pycharm-and-other-ides }
 
 Debug the PyQtInspect module directly in PyCharm; this won’t interfere with debugging your app.
 
@@ -164,7 +167,7 @@ Also taking [`PyQt-Fluent-Widgets`][1] as an example, you can create a new Debug
 
 Then simply Run/Debug.
 
-#### 3.4.2 Attach to Process (Detached Mode only, currently unstable)
+#### 3.4.2 Attach to Process (Detached Mode only, currently unstable) { #attach-to-process }
 
 If you **don’t have the target app’s source**, you can **try** enabling inspect via process attach.
 
@@ -198,7 +201,7 @@ The first tab below the brief info shows the call stack at control creation. Dou
 
 If opening PyCharm fails, set the PyCharm path under **More → Settings**.
 
-**P.S. For clients started via [Attach to Process](#342-attach-to-process-detached-mode-only-currently-unstable), if the control already existed when you attached, creation info won’t be available and the call stack will be empty.**
+**P.S. For clients started via [Attach to Process](#attach-to-process), if the control already existed when you attached, creation info won’t be available and the call stack will be empty.**
 
 ### 4.4 Execute code
 
