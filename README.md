@@ -77,7 +77,7 @@ Note that in **Direct Mode**, each client (debuggee) creates its own server, i.e
 
 **Detached Mode** supports remote debugging (server and client on different machines). **Direct Mode** does not, since the client and its auto-launched server run on the same machine.
 
-PyQtInspect also supports [running in IDEs like PyCharm](#341-run-pyqtinspect-in-pycharm-and-other-ides-supports-detached-mode-direct-mode) and [attaching to an existing PyQt/PySide process](#342-attach-to-process-detached-mode-only-currently-unstable).
+PyQtInspect also supports [running in IDEs like PyCharm](#341-run-pyqtinspect-in-pycharm-and-other-ides-supports-detached-mode-direct-mode), [using interactively in Jupyter notebooks](#35-jupyter-notebook-interactive-usage), and [attaching to an existing PyQt/PySide process](#342-attach-to-process-detached-mode-only-currently-unstable).
 
 ### 3.2 Direct Mode (Convenient method, recommended 👍)
 
@@ -173,6 +173,57 @@ Click **More → Attach To Process** to open the attach window, choose the targe
 **Note:** For most controls, you **cannot retrieve their creation call stacks** unless they were created **after** you attached.
 
 ![attach process](https://github.com/JezaChen/PyQtInspect-README-Assets/blob/main/Images/0.4.0/attach_process.gif?raw=true)
+
+#### 3.5 Jupyter Notebook Interactive Usage
+
+PyQtInspect can be used interactively in Jupyter notebooks to debug PyQt5/PySide widgets launched from within the notebook. This uses **Detached Mode**, where you start the server separately and connect from the notebook.
+
+**Step 1:** Start the PyQtInspect server in a terminal:
+```bash
+pqi-server
+```
+After launch, set the listening port (default `19394`) and click **Serve** to start the server.
+
+**Step 2:** In your Jupyter notebook, call `settrace()` **before importing PyQt5** or creating any widgets:
+
+```python
+# IMPORTANT: Call settrace BEFORE importing PyQt5
+import PyQtInspect.pqi as pqi
+
+# Connect to the server (default: localhost:19394)
+# Make sure the server is already running!
+pqi.settrace(
+    host='127.0.0.1',
+    port=19394,  # Default port, or use the port shown in the server GUI
+    qt_support='pyqt5',  # or 'auto' for auto-detection, or 'pyside2', 'pyqt6', 'pyside6'
+    patch_multiprocessing=False
+)
+
+# Now you can import PyQt5 and create widgets
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout
+from PyQt5.QtCore import Qt
+
+# Your widget code here
+app = QApplication.instance()
+if app is None:
+    app = QApplication([])
+
+widget = QWidget()
+button = QPushButton("Click me!")
+layout = QVBoxLayout()
+layout.addWidget(button)
+widget.setLayout(layout)
+widget.show()
+
+# The PyQtInspect server GUI should now be able to inspect your widgets!
+```
+
+**Important Notes:**
+
+* **Call `settrace()` before importing PyQt5**: The Qt patching must happen before any Qt modules are imported, otherwise PyQtInspect won't be able to track widget creation.
+* **Auto-detection**: Use `qt_support='auto'` to automatically detect which Qt framework (PyQt5/PyQt6/PySide2/PySide6) is being used.
+* **Server GUI**: After connecting, use the PyQtInspect server GUI window to select and inspect widgets interactively.
+* **Stopping**: To disconnect, call `pqi.stoptrace()`.
 
 ## 4. Usage
 
