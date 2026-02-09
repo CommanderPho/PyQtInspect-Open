@@ -28,6 +28,7 @@ if pyqt_inspect_module_dir not in sys.path:
     sys.path.insert(0, pyqt_inspect_module_dir)
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtCore import QTimer
 from PyQtInspect.pqi_gui.windows.attach_window import AttachWindow
 from PyQtInspect.pqi_gui.tabs.create_stacks_list_widget import CreateStacksListWidget
 from PyQtInspect.pqi_gui.tabs.widget_props_tree_widget import WidgetPropsTreeContainer
@@ -75,7 +76,7 @@ class PQIWindow(QtWidgets.QMainWindow):
     _sigInspectBegin = QtCore.pyqtSignal()
     _sigInspectDisabled = QtCore.pyqtSignal()
 
-    def __init__(self, parent=None, defaultPort: int = _DEFAULT_PORT):
+    def __init__(self, parent=None, defaultPort: int = _DEFAULT_PORT, serve_on_startup: bool=True):
         super().__init__(parent)
 
         self.setWindowTitle(self._getWindowTitle())
@@ -233,8 +234,8 @@ class PQIWindow(QtWidgets.QMainWindow):
         self._serveButton.setToolTip('Start/Stop the server.')
         self._serveButton.setFixedHeight(30)
         self._serveButton.setCheckable(True)
+        self._serveButton.setChecked(serve_on_startup)
         self._serveButton.clicked.connect(self._onServeButtonToggled)
-
         self._topLayout.addWidget(self._serveButton)
 
         self._selectButton = QtWidgets.QPushButton(self)
@@ -315,6 +316,9 @@ class PQIWindow(QtWidgets.QMainWindow):
 
         self.setStyleSheet(GLOBAL_STYLESHEET)
 
+        QTimer.singleShot(300, self.programmatically_toggle_serve_button)
+
+        
     # region -- Common Operators --
     def _initCommonOperators(self):
         inst = CommonOperators.initInstance(self)
@@ -347,6 +351,12 @@ class PQIWindow(QtWidgets.QMainWindow):
         # save the setting
         SettingsController.instance().alwaysOnTop = checked
     # endregion
+
+    def programmatically_toggle_serve_button(self, is_checked: bool=True):
+        print(f'self.programmatically_toggle_serve_button(is_checked={is_checked})')
+        self._serveButton.setChecked(is_checked)
+        # self._onServeButtonToggled
+
 
     # region -- For Serve Button --
     def _onServeButtonToggled(self, checked: bool):
@@ -723,7 +733,7 @@ class PQIWindow(QtWidgets.QMainWindow):
     @classmethod
     def createWindow(cls, args: argparse.Namespace):
         """ A factory method to create a window. """
-        window = cls(defaultPort=args.port)
+        window = cls(defaultPort=args.port, serve_on_startup=args.serving)
         return window
 
     # endregion
@@ -860,6 +870,7 @@ def _set_debug():
 
 
 def _createWindow(args: argparse.Namespace):
+    # if args.serving:  # serving mode
     if args.direct:  # direct mode
         return DirectModePQIWindow.createWindow(args)
 
@@ -885,7 +896,9 @@ def main():
         help='Set the port to listen',
         default=_DEFAULT_PORT
     )
-
+    parser.add_argument(
+        '--serving', action='store_true', help='Set serving immediately mode'
+    )
     args = parser.parse_args()  # type: argparse.Namespace
 
     # Check if the debug option is set.
