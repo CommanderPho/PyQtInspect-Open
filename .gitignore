@@ -4,3 +4,4 @@ build/**
 *.egg-info/**
 PyQtInspect/settings.ini
 **/__pycache__
+/.idea/**

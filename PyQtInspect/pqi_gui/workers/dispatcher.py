@@ -6,6 +6,7 @@ import threading
 
 from PyQtInspect._pqi_bundle.pqi_comm import ReaderThread, WriterThread, NetCommandFactory
 from PyQtInspect._pqi_bundle.pqi_override import overrides
+from PyQtInspect._pqi_bundle.pqi_typing import OptionalDict
 
 
 class DispatchReader(ReaderThread):
@@ -41,9 +42,9 @@ class Dispatcher(QtCore.QThread):
         self.reader = None
         self.writer = None
 
-        # 由于dispatcher刚创建的时候, 主界面还来不及处理立即到来的信息(PQYWorker未发出新dispatcher创建的信号)
-        # 所以需要在主界面准备好之后再处理
-        # 此前的消息都缓存起来
+        # When the dispatcher is just created, the main UI may not yet be ready to process the incoming messages
+        # (PQYWorker has not emitted the signal that a new dispatcher is available).
+        # Buffer messages until the main UI is ready.
         self._mainUIReady = False
         self._msg_buffer = []
 
@@ -94,11 +95,17 @@ class Dispatcher(QtCore.QThread):
     def sendSelectWidgetEvent(self, widgetId: int):
         self.writer.add_command(self.net_command_factory.make_select_widget_message(widgetId))
 
-    def sendRequestWidgetInfoEvent(self, widgetId: int, extra: dict = None):
+    def sendRequestWidgetInfoEvent(self, widgetId: int, extra: OptionalDict = None):
         self.writer.add_command(self.net_command_factory.make_req_widget_info_message(widgetId, extra))
 
     def sendRequestChildrenInfoEvent(self, widgetId: int):
         self.writer.add_command(self.net_command_factory.make_req_children_info_message(widgetId))
+
+    def sendRequestControlTreeInfoEvent(self, extra: OptionalDict = None):
+        self.writer.add_command(self.net_command_factory.make_req_control_tree_message(extra))
+
+    def sendRequestWidgetPropsEvent(self, widgetId: int):
+        self.writer.add_command(self.net_command_factory.make_req_widget_props_message(widgetId))
 
     def notifyDelete(self):
         self.close()
